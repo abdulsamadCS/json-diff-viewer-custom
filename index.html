@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Reposite JSON Diff — Profiles (Sheets)</title>
+<style>
+  :root{--bg:#0b1220;--panel:#0e172a;--card:#101827;--line:#1c2a42;--accent:#3b82f6;--text:#e7edf5;--muted:#93a6be;--ok:#10b981;--warn:#f59e0b;--bad:#ef4444}
+  *{box-sizing:border-box} html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif}
+  .app{display:grid;grid-template-columns:340px 1fr;height:100vh}
+  /* Left: tree */
+  .left{border-right:1px solid var(--line);background:linear-gradient(180deg,#0c1626,#0b1320);display:flex;flex-direction:column;min-width:0}
+  .l-head{display:flex;gap:8px;align-items:center;padding:10px 12px;border-bottom:1px solid var(--line);position:sticky;top:0;background:#0c1626;z-index:2}
+  .title{font-weight:700}
+  .sp{flex:1}
+  .btn{background:var(--accent);color:#fff;border:none;padding:8px 12px;border-radius:10px;cursor:pointer}
+  .btn.secondary{background:#24334e}
+  .btn.ghost{background:transparent;border:1px solid #27344e}
+  .search{padding:10px;border-bottom:1px solid var(--line);position:sticky;top:46px;background:#0c1626;z-index:1;display:flex;gap:8px;align-items:center}
+  .search input{flex:1;padding:10px;border-radius:10px;border:1px solid #21304a;background:#0f172a;color:#e7edf5;font-family:ui-monospace,Consolas,Menlo,monospace}
+  .tree{overflow:auto;flex:1;padding:10px}
+  .node{border:1px solid var(--line);border-radius:10px;background:#0f172a;margin-bottom:8px}
+  .node-h{display:flex;gap:8px;align-items:center;padding:8px 10px;border-bottom:1px dashed var(--line);cursor:pointer}
+  .node-h .name{font-weight:600}
+  .node-b{padding:6px 8px;display:none}
+  .tw{width:10px;height:10px;border-right:2px solid #8aa0b6;border-bottom:2px solid #8aa0b6;transform:rotate(-45deg);transition:transform .15s ease}
+  .collapsed .tw{transform:rotate(45deg)}
+  .sub{border:1px dashed #22324c;border-radius:10px;margin:6px 0 8px}
+  .sub-h{display:flex;gap:8px;align-items:center;padding:6px 8px;cursor:pointer}
+  .sub-b{padding:6px 8px;display:none}
+  .link{display:flex;gap:6px;align-items:center;margin:3px 0}
+  .labelWrap{display:flex;flex-direction:column;min-width:0}
+  .link .runLabel{color:#e7edf5;text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:inline-block;max-width:100%}
+  .link .runMeta{font-size:11px;color:#9db0c7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px}
+  .pill.ok{background:rgba(16,185,129,.18);color:#a7f3d0}
+  .pill.warn{background:rgba(245,158,11,.18);color:#fde68a}
+  .pill.bad{background:rgba(239,68,68,.18);color:#fecaca}
+  .pill.info{background:rgba(59,130,246,.18);color:#cfe1ff}
+  .status{font-size:12px;color:#9db0c7;margin-left:6px}
+  /* Right main */
+  .right{display:flex;flex-direction:column;min-width:0}
+  .r-head{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line);position:sticky;top:0;background:#0c1626}
+  .container{padding:12px;display:grid;grid-template-columns:1fr 1fr;gap:12px;overflow:auto}
+  label{font-size:12px;color:#cbd5e1;margin:6px 0 6px 4px;display:block}
+  textarea{width:100%;min-height:220px;background:#0f172a;color:#e7edf5;border:1px solid #1f2d45;border-radius:12px;padding:12px;font-family:ui-monospace,Consolas,Menlo,monospace}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;margin:12px}
+  .card h3{margin:0;padding:10px 12px;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:center}
+  table{width:100%;border-collapse:collapse}
+  th,td{border-bottom:1px solid #1f2d40;padding:8px;vertical-align:top;font-size:13px}
+  thead th{background:#0f172a;position:sticky;top:50px;z-index:1;text-align:left}
+  .path{color:#8ea4bd;font-size:12px}
+  pre{white-space:pre-wrap;word-break:break-word;margin:0}
+  .json .k{color:#93c5fd}.json .s{color:#fca5a5}.json .n{color:#a7f3d0}.json .b{color:#fde68a}.json .l{color:#c7d2fe}
+  .twoCol{table-layout:fixed}
+  .twoCol col{width:50%}
+  /* Modal */
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:99}
+  .dialog{width:min(860px,92vw);background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+  .dialog-h{padding:10px 12px;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center}
+  .dialog-b{padding:12px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  input[type=text]{width:100%;padding:10px;border-radius:10px;border:1px solid #21304a;background:#0f172a;color:#e7edf5;font-family:ui-monospace,Consolas,Menlo,monospace}
+  .note{font-size:12px;color:#9db0c7}
+  .alert{display:none;margin-top:8px;border-radius:10px;padding:8px}
+  .alert.ok{display:block;background:rgba(16,185,129,.12);border:1px solid #1f3a2d;color:#a7f3d0}
+  .alert.err{display:block;background:rgba(239,68,68,.12);border:1px solid #3a1f23;color:#fecaca}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+</head>
+<body>
+<div class="app">
+  <!-- LEFT -->
+  <aside class="left">
+    <div class="l-head">
+      <div class="title">Entities</div>
+      <div class="sp"></div>
+      <button class="btn secondary" id="btnLoad">Load Sheets</button>
+      <button class="btn ghost" id="btnConfig">Config</button>
+      <span class="status" id="status">idle</span>
+    </div>
+    <div class="search">
+      <input id="qry" placeholder="Search (label or row)..." />
+      <button class="btn ghost" id="clearQry">Clear</button>
+    </div>
+    <div class="tree" id="tree"><div class="status">Use “Load Sheets”.</div></div>
+  </aside>
+
+  <!-- RIGHT -->
+  <section class="right">
+    <div class="r-head">
+      <div class="title">Compare</div>
+      <div class="sp"></div>
+      <button class="btn" id="btnCompare">Compare</button>
+      <button class="btn secondary" id="btnSample">Sample</button>
+      <button class="btn ghost" id="btnClear">Clear</button>
+    </div>
+    <div class="container">
+      <div>
+        <label>Client JSON</label>
+        <textarea id="client" placeholder="Paste client JSON here..."></textarea>
+      </div>
+      <div>
+        <label>Your JSON</label>
+        <textarea id="mine" placeholder="Paste your JSON here..."></textarea>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>1) Same Key & Value <span id="sameCount" class="pill ok">0</span></h3>
+      <div id="sameSec" style="padding:10px 12px"><em class="status">Run Compare to see results.</em></div>
+    </div>
+    <div class="card">
+      <h3>2) Same Key, Different Value <span id="diffCount" class="pill bad">0</span></h3>
+      <div id="diffSec" style="padding:10px 12px"><em class="status">Run Compare to see results.</em></div>
+    </div>
+    <div class="card">
+      <h3>3) Keys only on one side <span id="onlyCount" class="pill warn">0</span></h3>
+      <div id="onlySec" style="padding:10px 12px"><em class="status">Run Compare to see results.</em></div>
+    </div>
+  </section>
+</div>
+
+<!-- CONFIG MODAL -->
+<div class="modal" id="modal">
+  <div class="dialog">
+    <div class="dialog-h">
+      <div style="font-weight:700">Google Sheets Configuration</div>
+      <div class="sp"></div>
+      <button class="btn ghost" id="closeCfg">Close</button>
+    </div>
+    <div class="dialog-b">
+      <div class="grid">
+        <div>
+          <div class="note">Spreadsheet ID</div>
+          <input id="ssId" />
+        </div>
+        <div>
+          <div class="note">Quick Actions</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
+            <button class="btn" id="saveCfg">Save</button>
+            <button class="btn ghost" id="testHotel">Test Hotel CSV</button>
+          </div>
+        </div>
+      </div>
+      <div class="note" style="margin-top:10px">GIDs (tab ids):</div>
+      <div id="gidTable" style="margin-top:6px"></div>
+      <div id="alertOk" class="alert ok"></div>
+      <div id="alertErr" class="alert err"></div>
+      <div class="note" style="margin-top:8px">Your sheet must be shared as <b>Anyone with the link → Viewer</b>.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = (s)=>document.querySelector(s);
+const $$ = (s)=>Array.from(document.querySelectorAll(s));
+// FIXED: removed stray brace that broke all JS
+const escapeHtml = (s)=>String(s).replace(/[&<>\"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]));
+const isObj = (v)=> v && typeof v==='object' && !Array.isArray(v);
+
+// ---------- Constants ----------
+const CATEGORY_LABELS = {
+  "staff_supplier_category": "Preferred Staff",
+  "hired_entertainment_supplier_category": "Hired Entertainment",
+  "transportation_supplier_category": "Transportation",
+  "logistics_supplier_category": "Logistics/Decor",
+  "activity_supplier_category": "Activities",
+  "venue_supplier_category": "Venues",
+  "restaurant_supplier_category": "Restaurants",
+  "amenity_supplier_category": "Amenities/Gifting",
+  "hotel_supplier_category": "Hotel",
+  "catering_supplier_category": "Catering"
+};
+const PREFILL = {
+  spreadsheetId: "1hSOxwah42fSktnI55I5SL2H6hCuZlzRX",
+  sheets: {
+    "Preferred Staff": "1685070877",
+    "Hired Entertainment": "915667467",
+    "Transportation": "263006075",
+    "Logistics/Decor": "1219031908",
+    "Activities": "289254408",
+    "Venues": "999631990",
+    "Restaurants": "50877848",
+    "Amenities/Gifting": "1489199023",
+    "Hotel": "901202560",
+    "Catering": "395320062"
+  }
+};
+const CFG_KEY = "gs_cfg_modal_v3";
+
+// ---------- State ----------
+let CFG = loadLocal(CFG_KEY, PREFILL);
+let LIB = {}; // { key: {one_to_one:[], one_to_many:[], urlErrors:0} }
+
+// ---------- Storage helpers ----------
+function saveLocal(k,v){ localStorage.setItem(k, JSON.stringify(v)); }
+function loadLocal(k,def){ try{ return JSON.parse(localStorage.getItem(k)) ?? def; }catch{ return def; } }
+
+// ---------- Config modal ----------
+function openModal(){ $('#modal').style.display='flex'; }
+function closeModal(){ $('#modal').style.display='none'; }
+
+function buildGidTable(){
+  const wrap = document.createElement('div');
+  for(const label of Object.values(CATEGORY_LABELS)){
+    const row = document.createElement('div');
+    row.style.cssText='display:grid;grid-template-columns:1fr 120px;gap:8px;margin:6px 0';
+    row.innerHTML = `<div style="color:#d2dbe8">${label}</div>
+      <input data-label="${label}" value="${escapeHtml(CFG.sheets[label]||'')}" />`;
+    wrap.appendChild(row);
+  }
+  return wrap;
+}
+
+function mountConfig(){
+  $('#ssId').value = CFG.spreadsheetId || '';
+  $('#gidTable').innerHTML='';
+  $('#gidTable').appendChild(buildGidTable());
+  $('#saveCfg').onclick = ()=>{
+    CFG.spreadsheetId = ($('#ssId').value||'').trim();
+    $$('#gidTable input[data-label]').forEach(inp=>{
+      const label = inp.getAttribute('data-label'); CFG.sheets[label] = inp.value.trim();
+    });
+    saveLocal(CFG_KEY, CFG);
+    toastOk('Saved.');
+  };
+  $('#testHotel').onclick = async ()=>{
+    clearAlerts();
+    try{
+      const txt = await fetchCsv(CFG.spreadsheetId, CFG.sheets['Hotel']);
+      toastOk(`Hotel CSV bytes: ${txt.length}`);
+    }catch(e){ toastErr(e.message); }
+  };
+  $('#closeCfg').onclick = closeModal;
+}
+
+function toastOk(msg){ const el=$('#alertOk'); el.textContent=msg; el.classList.add('ok'); el.style.display='block'; setTimeout(()=>{el.style.display='none'},3000); }
+function toastErr(msg){ const el=$('#alertErr'); el.textContent=msg; el.classList.add('err'); el.style.display='block'; }
+function clearAlerts(){ $('#alertOk').style.display='none'; $('#alertErr').style.display='none'; }
+
+// ---------- Parse input_url meta (dict or string) ----------
+function parseInputMeta(val){
+  if(!val) return { name:null, website:null, error:true };
+  if(typeof val === 'string'){
+    const s = val.trim();
+    if(!s) return {name:null, website:null, error:true};
+    if(s.startsWith('{')){
+      try{
+        const obj = JSON.parse(s);
+        const name = typeof obj.name==='string' ? obj.name : null;
+        const website = typeof obj.website==='string' ? obj.website : null;
+        return { name, website, error: !(website) };
+      }catch{
+        return { name:null, website:null, error:true };
+      }
+    } else {
+      // backward-compatible plain URL string
+      return { name:null, website:s, error:false };
+    }
+  }
+  if(typeof val === 'object'){
+    const name = typeof val.name==='string' ? val.name : null;
+    const website = typeof val.website==='string' ? val.website : null;
+    return { name, website, error: !(website) };
+  }
+  return { name:null, website:null, error:true };
+}
+
+// ---------- Columns per label ----------
+function colsFor(label){
+  const first = label.split(' ')[0];
+  return {
+    one_to_one: { input_url: `${first} 1:1`, client_json: "Output", our_json: "Our 1:1 Output" },
+    one_to_many: { input_url: `${first} 1:Many`, client_json: "Output 1:Many", our_json: "Our 1:Many Output" }
+  };
+}
+
+// ---------- CSV / Load ----------
+async function fetchCsv(spreadsheetId, gid){
+  const url = `https://docs.google.com/spreadsheets/d/${encodeURIComponent(spreadsheetId)}/export?format=csv&gid=${encodeURIComponent(gid)}&single=true`;
+  const res = await fetch(url, {cache:'no-store'});
+  if(!res.ok) throw new Error(`HTTP ${res.status} for gid ${gid}`);
+  return await res.text();
+}
+async function parseCsv(text){
+  const out = Papa.parse(text, {header:true, skipEmptyLines:true});
+  if(out.errors?.length){ console.warn('CSV parse warnings:', out.errors.slice(0,3)); }
+  return out.data;
+}
+
+async function loadAllSheets(){
+  $('#status').textContent = 'loading…';
+  LIB = {};
+  const sid = (CFG.spreadsheetId||'').trim();
+  if(!sid){ $('#status').textContent='no spreadsheet id'; return; }
+
+  for(const [key,label] of Object.entries(CATEGORY_LABELS)){
+    LIB[key] = {one_to_one:[], one_to_many:[], urlErrors:0};
+    const gid = (CFG.sheets[label]||'').trim();
+    if(!gid) continue;
+    try{
+      const txt = await fetchCsv(sid, gid);
+      const rows = await parseCsv(txt);
+      const cols = colsFor(label);
+      rows.forEach((r, idx)=>{
+        const rowNum = idx + 2;
+
+        // 1→1
+        if (r[cols.one_to_one.input_url] || r[cols.one_to_one.client_json] || r[cols.one_to_one.our_json]){
+          const meta = parseInputMeta(r[cols.one_to_one.input_url]);
+          let badClient=false, cj=null, oj=null;
+          try{ cj = JSON.parse(r[cols.one_to_one.client_json] || '{}'); }catch{ badClient=true; }
+          try{ oj = JSON.parse(r[cols.one_to_one.our_json] || '{}'); }catch{}
+          const labelTxt = meta.name || meta.website || `${label} (1→1)`;
+          if (cj && typeof cj==='object'){
+            LIB[key].one_to_one.push({ label:labelTxt, row:rowNum, client_json:cj, our_json: oj||{}, website:meta.website, badClient, badUrl:meta.error });
+            if(meta.error) LIB[key].urlErrors++;
+          }
+        }
+
+        // 1→N
+        if (r[cols.one_to_many.input_url] || r[cols.one_to_many.client_json] || r[cols.one_to_many.our_json]){
+          const meta = parseInputMeta(r[cols.one_to_many.input_url]);
+          let badClient=false, cj=null, oj=null;
+          try{ cj = JSON.parse(r[cols.one_to_many.client_json] || '{}'); }catch{ badClient=true; }
+          try{ oj = JSON.parse(r[cols.one_to_many.our_json] || '{}'); }catch{}
+          const labelTxt = meta.name || meta.website || `${label} (1→N)`;
+          if (cj && typeof cj==='object'){
+            LIB[key].one_to_many.push({ label:labelTxt, row:rowNum, client_json:cj, our_json: oj||{}, website:meta.website, badClient, badUrl:meta.error });
+            if(meta.error) LIB[key].urlErrors++;
+          }
+        }
+      });
+    }catch(e){
+      LIB[key].urlErrors += 1;
+      console.warn('Failed to load', label, e);
+    }
+  }
+
+  buildTree();
+  $('#status').textContent = 'ready';
+}
+
+// ---------- Tree ----------
+function buildTree(){
+  const root = $('#tree');
+  const q = ($('#qry').value||'').toLowerCase().trim();
+  root.innerHTML = '';
+
+  const entities = Object.entries(CATEGORY_LABELS)
+    .map(([key,label])=>({key,label,errs: (LIB[key]?.urlErrors)||0}))
+    .sort((a,b)=> (a.errs-b.errs) || a.label.localeCompare(b.label));
+
+  let totalRuns = 0;
+  for(const {key,label,errs} of entities){
+    const cat = LIB[key] || {one_to_one:[], one_to_many:[], urlErrors:0};
+    const all = [...cat.one_to_one.map(x=>({...x,rel:'one_to_one'})), ...cat.one_to_many.map(x=>({...x,rel:'one_to_many'}))];
+    const filtered = q ? all.filter(r => String(r.label||'').toLowerCase().includes(q) || String(r.row).includes(q)) : all;
+    const grp11 = filtered.filter(r=>r.rel==='one_to_one');
+    const grp1N = filtered.filter(r=>r.rel==='one_to_many');
+    const total = grp11.length + grp1N.length;
+    totalRuns += total;
+
+    const card = document.createElement('div');
+    card.className = 'node collapsed';
+    card.innerHTML = `
+      <div class="node-h">
+        <div class="tw"></div>
+        <div class="name">${label}</div>
+        <div class="sp"></div>
+        <span class="pill info">${total} runs</span>
+        <span class="pill ok">${grp11.length}× 1→1</span>
+        <span class="pill ok">${grp1N.length}× 1→N</span>
+        ${errs ? `<span class="pill bad">${errs} url issues</span>` : ''}
+      </div>
+      <div class="node-b"></div>`;
+
+    const body = card.querySelector('.node-b');
+
+    function addSub(title, arr, rel){
+      const box = document.createElement('div');
+      box.className = 'sub';
+      box.innerHTML = `<div class="sub-h">${title} <span class="pill info">${arr.length}</span></div>
+                       <div class="sub-b" style="display:none"></div>`;
+      const subBody = box.querySelector('.sub-b');
+      if(!arr.length){ const p=document.createElement('div'); p.className='status'; p.textContent='No rows'; subBody.appendChild(p); }
+      arr.forEach(r=>{
+        const row = document.createElement('div'); row.className='link';
+        row.innerHTML = `
+          <div class="labelWrap" style="flex:1;min-width:0">
+            <a href="#" class="runLabel" data-cat="${key}" data-rel="${rel}" data-row="${r.row}">Row ${r.row}: ${escapeHtml(r.label||'')}</a>
+            <div class="runMeta">${r.website ? escapeHtml(r.website) : '<span style="color:#fecaca">unable to load url</span>'}</div>
+          </div>
+          ${r.badClient?'<span class="pill bad">invalid client JSON</span>':''}
+          ${r.badUrl?'<span class="pill bad">url meta missing</span>':''}`;
+        subBody.appendChild(row);
+      });
+      // toggle sub
+      box.querySelector('.sub-h').addEventListener('click', ()=>{
+        subBody.style.display = (subBody.style.display==='block')?'none':'block';
+      });
+      body.appendChild(box);
+    }
+
+    addSub('1 → 1', grp11, 'one_to_one');
+    addSub('1 → N', grp1N, 'one_to_many');
+
+    // toggle entity
+    card.querySelector('.node-h').addEventListener('click', ()=>{
+      const collapsed = card.classList.toggle('collapsed');
+      body.style.display = collapsed ? 'none' : 'block';
+    });
+
+    root.appendChild(card);
+  }
+
+  $('#status').textContent = `${totalRuns} runs`;
+
+  // link clicks
+  root.querySelectorAll('a[data-cat]').forEach(a=>{
+    a.addEventListener('click', (e)=>{
+      e.preventDefault();
+      const cat=a.getAttribute('data-cat'), rel=a.getAttribute('data-rel'), row=+a.getAttribute('data-row');
+      const r = (LIB[cat]?.[rel]||[]).find(x=>x.row===row);
+      if(!r) return;
+      $('#client').value = JSON.stringify(r.client_json, null, 2);
+      $('#mine').value = JSON.stringify(r.our_json || {}, null, 2);
+      doCompare();
+    });
+  });
+}
+
+// ---------- Diff ----------
+function mergeProfiles(arr){ let out={}; for (const i of arr||[]){ if (isObj(i.profile)) Object.assign(out, i.profile); } return out; }
+function extractClient(d){ if (Array.isArray(d)) return mergeProfiles(d); if (isObj(d.profile)) return d.profile; return mergeProfiles(d.categories); }
+function extractMine(d){ if (Array.isArray(d)){ const cats = d.flatMap(x=>x && Array.isArray(x.categories) ? x.categories : []); return cats.reduce((a,c)=>Object.assign(a, (c && c.profile) || {}), {}); } return mergeProfiles(d.categories); }
+function canon(v){
+  if (Array.isArray(v)){ const uniq = [...new Set(v.map(JSON.stringify))].map(JSON.parse); const c = uniq.map(canon); return JSON.stringify(c.sort()); }
+  if (isObj(v)){ const o = Object.keys(v).sort().reduce((r,k)=>{ r[k]=canon(v[k]); return r; },{}); return JSON.stringify(o); }
+  return JSON.stringify(v);
+}
+function highlightJSON(value){
+  const json = (typeof value==='object') ? JSON.stringify(value, null, 2) : JSON.stringify(value);
+  return json
+    .replace(/^(\s*)"([^"]+)":/gm, (m,sp,key)=>`${sp}<span class="k">"${key}"</span>:`)
+    .replace(/"([^"\\]|\\.)*"/g, (m)=>`<span class="s">${m}</span>`)
+    .replace(/\b(true|false)\b/g, (m)=>`<span class="b">${m}</span>`)
+    .replace(/\bnull\b/g, '<span class="l">null</span>')
+    .replace(/(-?\b\d+(?:\.\d+)?\b)/g, (m)=> (/^(".*)$/.test(m) ? m : `<span class="n">${m}</span>`));
+}
+function cell(v){ return `<pre class="json">${highlightJSON(v)}</pre>`; }
+function plainCell(v){ return `<pre>${escapeHtml(typeof v==='object' ? JSON.stringify(v, null, 2) : String(v))}</pre>`; }
+function compare(a,b){
+  const ka=Object.keys(a), kb=Object.keys(b); const all=[...new Set([...ka,...kb])];
+  const same=[], diff=[], onlyA=[], onlyB=[];
+  for(const k of all){
+    if(ka.includes(k) && kb.includes(k)){
+      if(canon(a[k]) === canon(b[k])) same.push([k,a[k]]);
+      else diff.push([k,a[k],b[k]]);
+    } else if (ka.includes(k)) { onlyA.push([k,a[k]]); }
+      else { onlyB.push([k,b[k]]); }
+  }
+  return {same,diff,onlyA,onlyB};
+}
+function render({same,diff,onlyA,onlyB}){
+  $('#sameSec').innerHTML = same.length
+    ? `<table><thead><tr><th>Key</th><th>Value (equal)</th></tr></thead><tbody>${same.map(r=>`<tr><td class='path'>${r[0]}</td><td>${cell(r[1])}</td></tr>`).join('')}</tbody></table>`
+    : '<em class="status">None</em>';
+  $('#diffSec').innerHTML = diff.length
+    ? `<table><thead><tr><th>Key</th><th>Client Profile</th><th>Your Category Profile (union)</th></tr></thead><tbody>${diff.map(r=>`<tr><td class='path'>${r[0]}</td><td>${cell(r[1])}</td><td>${cell(r[2])}</td></tr>`).join('')}</tbody></table>`
+    : '<em class="status">None</em>';
+  $('#onlySec').innerHTML = `<table class='twoCol'><colgroup><col><col></colgroup>
+    <thead><tr><th>Only in Client</th><th>Only in Yours</th></tr></thead>
+    <tbody><tr>
+      <td>${onlyA.map(r=>`<div><b class='path'>${r[0]}</b>${plainCell(r[1])}</div>`).join('') || '<em class="status">None</em>'}</td>
+      <td>${onlyB.map(r=>`<div><b class='path'>${r[0]}</b>${plainCell(r[1])}</div>`).join('') || '<em class="status">None</em>'}</td>
+    </tr></tbody></table>`;
+  $('#sameCount').textContent = same.length;
+  $('#diffCount').textContent = diff.length;
+  $('#onlyCount').textContent = onlyA.length + onlyB.length;
+}
+function doCompare(){
+  let c={}, m={};
+  try{ c = JSON.parse($('#client').value||'{}'); }catch{ c={}; }
+  try{ m = JSON.parse($('#mine').value||'{}'); }catch{ m={}; }
+  const a = extractClient(c);
+  const b = extractMine(m);
+  render(compare(a,b));
+}
+
+// ---------- Events ----------
+$('#btnConfig').onclick = ()=>{ openModal(); mountConfig(); };
+$('#closeCfg').onclick = closeModal;
+$('#btnLoad').onclick = loadAllSheets;
+$('#qry').addEventListener('input', buildTree);
+$('#clearQry').onclick = ()=>{ $('#qry').value=''; buildTree(); };
+$('#btnCompare').onclick = doCompare;
+$('#btnSample').onclick = ()=>{
+  $('#client').value = `[{"profile":{"name":"Atlantic","starRating":"4","hotelType":["hotel_type_resort","hotel_type_spa"],"hasPool":true,"amenities":["wifi","pool","gym"]}}]`;
+  $('#mine').value = `{"categories":[{"profile":{"name":"Atlantic","starRating":4,"hotelType":["hotel_type_spa","hotel_type_resort"],"amenities":["pool","wifi" ]}}]}`;
+};
+$('#btnClear').onclick = ()=>{
+  $('#client').value=''; $('#mine').value='';
+  ['#sameSec','#diffSec','#onlySec'].forEach(id=>$(id).innerHTML='<em class="status">Cleared.</em>');
+  ['#sameCount','#diffCount','#onlyCount'].forEach(id=>$(id).textContent='0');
+};
+
+// ---------- First mount ----------
+(function firstMount(){
+  // Prime config from PREFILL
+  saveLocal(CFG_KEY, CFG);
+  mountConfig();
+})();
+</script>
+</body>
+</html>
