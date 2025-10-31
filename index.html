@@ -15,6 +15,7 @@
   .title{font-weight:700}
   .sp{flex:1}
   .btn{background:var(--accent);color:#fff;border:none;padding:8px 12px;border-radius:10px;cursor:pointer}
+  .btn:disabled{opacity:0.4;cursor:not-allowed}
   .btn.secondary{background:#24334e}
   .btn.ghost{background:transparent;border:1px solid #27344e}
   .search{padding:10px;border-bottom:1px solid var(--line);position:sticky;top:46px;background:#0c1626;z-index:1;display:flex;gap:8px;align-items:center}
@@ -100,10 +101,20 @@
       <div>
         <label>Client JSON</label>
         <textarea id="client" placeholder="Paste client JSON here..."></textarea>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+          <button class="btn ghost" id="clientPrev">← Prev</button>
+          <span id="clientCounter" class="pill info">0/0</span>
+          <button class="btn ghost" id="clientNext">Next →</button>
+        </div>
       </div>
       <div>
         <label>Your JSON</label>
         <textarea id="mine" placeholder="Paste your JSON here..."></textarea>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+          <button class="btn ghost" id="ourPrev">← Prev</button>
+          <span id="ourCounter" class="pill info">0/0</span>
+          <button class="btn ghost" id="ourNext">Next →</button>
+        </div>
       </div>
     </div>
 
@@ -166,10 +177,10 @@ const CATEGORY_LABELS = {
   "hired_entertainment_supplier_category": "Hired Entertainment",
   "transportation_supplier_category": "Transportation",
   "logistics_supplier_category": "Logistics",
-  "activity_supplier_category": "Activities",
+  "activity_supplier_category": "Activity",
   "venue_supplier_category": "Venues",
   "restaurant_supplier_category": "Restaurants",
-  "amenity_supplier_category": "Amenities/Gifting",
+  "amenity_supplier_category": "Amenity",
   "hotel_supplier_category": "Hotel",
   "catering_supplier_category": "Catering"
 };
@@ -193,6 +204,8 @@ const CFG_KEY = "gs_cfg_modal_v3";
 // ---------- State ----------
 let CFG = loadLocal(CFG_KEY, PREFILL);
 let LIB = {}; // { key: {one_to_one:[], one_to_many:[], urlErrors:0} }
+let clientIdx = 0;
+let ourIdx = 0;
 
 // ---------- Storage helpers ----------
 function saveLocal(k,v){ localStorage.setItem(k, JSON.stringify(v)); }
@@ -273,7 +286,7 @@ function colsFor(label){
   const first = label.split(' ')[0];
   return {
     one_to_one: { input_url: `${first} 1:1`, client_json: "Cleaned Output", our_json: "Our 1:1 Output" },
-    one_to_many: { input_url: `${first} 1:Many`, client_json: "Output 1:Many", our_json: "Our 1:Many Output" }
+    one_to_many: { input_url: `${first} 1:Many`, client_json: "Cleaned Output 1:Many", our_json: "Our 1:Many Output" }
   };
 }
 
@@ -427,12 +440,85 @@ function buildTree(){
       if(!r) return;
       $('#client').value = JSON.stringify(r.client_json, null, 2);
       $('#mine').value = JSON.stringify(r.our_json || {}, null, 2);
+      clientIdx = 0;
+      ourIdx = 0;
       doCompare();
     });
   });
 }
 
 // ---------- Diff ----------
+// Count total profiles in a JSON structure
+function countProfiles(d){
+  if(!d) return 0;
+  
+  // For arrays, check if items have categories (nested structure)
+  if(Array.isArray(d)){
+    const allCats = d.flatMap(x => x && Array.isArray(x.categories) ? x.categories : []);
+    if(allCats.length > 0){
+      return allCats.filter(x => x && x.profile).length;
+    }
+    return d.filter(x => x && x.profile).length;
+  }
+  
+  // For objects with categories array, count profiles in categories
+  if(Array.isArray(d.categories)){
+    return d.categories.filter(x => x && x.profile).length;
+  }
+  
+  // Single profile object
+  if(d.profile) return 1;
+  
+  return 0;
+}
+
+// Extract single profile at index from client format
+function extractClientAt(d, idx){
+  if(!d) return {};
+  
+  // Check for categories first (prioritize nested profiles)
+  if(Array.isArray(d.categories)){
+    const profiles = d.categories.filter(x => x && x.profile);
+    return profiles[idx]?.profile || {};
+  }
+  
+  // For arrays
+  if(Array.isArray(d)){
+    const profiles = d.filter(x => x && x.profile);
+    return profiles[idx]?.profile || {};
+  }
+  
+  // Single profile object (fallback)
+  if(d.profile) return d.profile;
+  
+  return {};
+}
+
+// Extract single profile at index from our format
+function extractMineAt(d, idx){
+  if(!d) return {};
+  
+  // For arrays, extract all profiles from nested categories first
+  if(Array.isArray(d)){
+    const allCats = d.flatMap(x => x && Array.isArray(x.categories) ? x.categories : []);
+    if(allCats.length > 0){
+      const profiles = allCats.filter(x => x && x.profile);
+      return profiles[idx]?.profile || {};
+    }
+    // Fallback to direct profiles if no categories
+    const profiles = d.filter(x => x && x.profile);
+    return profiles[idx]?.profile || {};
+  }
+  
+  // For objects with categories array
+  if(Array.isArray(d.categories)){
+    const profiles = d.categories.filter(x => x && x.profile);
+    return profiles[idx]?.profile || {};
+  }
+  
+  return {};
+}
+
 function mergeProfiles(arr){ let out={}; for (const i of arr||[]){ if (isObj(i.profile)) Object.assign(out, i.profile); } return out; }
 function extractClient(d){ if (Array.isArray(d)) return mergeProfiles(d); if (isObj(d.profile)) return d.profile; return mergeProfiles(d.categories); }
 function extractMine(d){ if (Array.isArray(d)){ const cats = d.flatMap(x=>x && Array.isArray(x.categories) ? x.categories : []); return cats.reduce((a,c)=>Object.assign(a, (c && c.profile) || {}), {}); } return mergeProfiles(d.categories); }
@@ -483,10 +569,28 @@ function render({same,diff,onlyA,onlyB}){
 }
 function doCompare(){
   let c={}, m={};
-  try{ c = JSON.parse($('#client').value||'{}'); }catch{ c={}; }
-  try{ m = JSON.parse($('#mine').value||'{}'); }catch{ m={}; }
-  const a = extractClient(c);
-  const b = extractMine(m);
+  try{ c = JSON.parse($('#client').value||'{}'); }catch(e){ console.error('Client JSON parse error:', e); c={}; }
+  try{ m = JSON.parse($('#mine').value||'{}'); }catch(e){ console.error('Our JSON parse error:', e); m={}; }
+  
+  const clientTotal = countProfiles(c);
+  const ourTotal = countProfiles(m);
+  
+  // Reset indices if out of bounds or invalid
+  if(clientIdx < 0 || clientIdx >= clientTotal) clientIdx = 0;
+  if(ourIdx < 0 || ourIdx >= ourTotal) ourIdx = 0;
+  
+  // Update counters
+  $('#clientCounter').textContent = clientTotal > 0 ? `${clientIdx + 1}/${clientTotal}` : '0/0';
+  $('#ourCounter').textContent = ourTotal > 0 ? `${ourIdx + 1}/${ourTotal}` : '0/0';
+  
+  // Enable/disable buttons
+  $('#clientPrev').disabled = clientTotal <= 1 || clientIdx <= 0;
+  $('#clientNext').disabled = clientTotal <= 1 || clientIdx >= clientTotal - 1;
+  $('#ourPrev').disabled = ourTotal <= 1 || ourIdx <= 0;
+  $('#ourNext').disabled = ourTotal <= 1 || ourIdx >= ourTotal - 1;
+  
+  const a = clientTotal > 0 ? extractClientAt(c, clientIdx) : {};
+  const b = ourTotal > 0 ? extractMineAt(m, ourIdx) : {};
   render(compare(a,b));
 }
 
@@ -503,8 +607,44 @@ $('#btnSample').onclick = ()=>{
 };
 $('#btnClear').onclick = ()=>{
   $('#client').value=''; $('#mine').value='';
+  clientIdx = 0; ourIdx = 0;
   ['#sameSec','#diffSec','#onlySec'].forEach(id=>$(id).innerHTML='<em class="status">Cleared.</em>');
   ['#sameCount','#diffCount','#onlyCount'].forEach(id=>$(id).textContent='0');
+  $('#clientCounter').textContent = '0/0';
+  $('#ourCounter').textContent = '0/0';
+};
+
+// Navigation buttons
+$('#clientPrev').onclick = ()=>{ 
+  if(clientIdx > 0){ 
+    clientIdx--; 
+    doCompare(); 
+  } 
+};
+
+$('#clientNext').onclick = ()=>{ 
+  let c={};
+  try{ c = JSON.parse($('#client').value||'{}'); }catch{ c={}; }
+  if(clientIdx < countProfiles(c) - 1){ 
+    clientIdx++; 
+    doCompare(); 
+  }
+};
+
+$('#ourPrev').onclick = ()=>{ 
+  if(ourIdx > 0){ 
+    ourIdx--; 
+    doCompare(); 
+  } 
+};
+
+$('#ourNext').onclick = ()=>{ 
+  let m={};
+  try{ m = JSON.parse($('#mine').value||'{}'); }catch{ m={}; }
+  if(ourIdx < countProfiles(m) - 1){ 
+    ourIdx++; 
+    doCompare(); 
+  }
 };
 
 // ---------- First mount ----------
