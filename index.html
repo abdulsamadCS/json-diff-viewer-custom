@@ -56,6 +56,8 @@
   .json .k{color:#93c5fd}.json .s{color:#fca5a5}.json .n{color:#a7f3d0}.json .b{color:#fde68a}.json .l{color:#c7d2fe}
   .twoCol{table-layout:fixed}
   .twoCol col{width:50%}
+  .row-match{background:rgba(16,185,129,.08)}
+  .match-icon{color:#10b981;font-weight:bold;margin-left:4px}
   /* Modal */
   .modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:99}
   .dialog{width:min(860px,92vw);background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
@@ -85,7 +87,7 @@
       <input id="qry" placeholder="Search (label or row)..." />
       <button class="btn ghost" id="clearQry">Clear</button>
     </div>
-    <div class="tree" id="tree"><div class="status">Use “Load Sheets”.</div></div>
+    <div class="tree" id="tree"><div class="status">Use "Load Sheets".</div></div>
   </aside>
 
   <!-- RIGHT -->
@@ -119,15 +121,11 @@
     </div>
 
     <div class="card">
-      <h3>1) Same Key & Value <span id="sameCount" class="pill ok">0</span></h3>
-      <div id="sameSec" style="padding:10px 12px"><em class="status">Run Compare to see results.</em></div>
+      <h3>1) Same Keys <span id="commonCount" class="pill info">0</span> <span id="matchCount" class="pill ok">0 match</span></h3>
+      <div id="commonSec" style="padding:10px 12px"><em class="status">Run Compare to see results.</em></div>
     </div>
     <div class="card">
-      <h3>2) Same Key, Different Value <span id="diffCount" class="pill bad">0</span></h3>
-      <div id="diffSec" style="padding:10px 12px"><em class="status">Run Compare to see results.</em></div>
-    </div>
-    <div class="card">
-      <h3>3) Keys only on one side <span id="onlyCount" class="pill warn">0</span></h3>
+      <h3>2) Different Keys <span id="onlyCount" class="pill warn">0</span></h3>
       <div id="onlySec" style="padding:10px 12px"><em class="status">Run Compare to see results.</em></div>
     </div>
   </section>
@@ -540,31 +538,32 @@ function cell(v){ return `<pre class="json">${highlightJSON(v)}</pre>`; }
 function plainCell(v){ return `<pre>${escapeHtml(typeof v==='object' ? JSON.stringify(v, null, 2) : String(v))}</pre>`; }
 function compare(a,b){
   const ka=Object.keys(a), kb=Object.keys(b); const all=[...new Set([...ka,...kb])];
-  const same=[], diff=[], onlyA=[], onlyB=[];
+  const commonKeys=[], onlyA=[], onlyB=[];
   for(const k of all){
     if(ka.includes(k) && kb.includes(k)){
-      if(canon(a[k]) === canon(b[k])) same.push([k,a[k]]);
-      else diff.push([k,a[k],b[k]]);
+      const isMatch = canon(a[k]) === canon(b[k]);
+      commonKeys.push([k, a[k], b[k], isMatch]);
     } else if (ka.includes(k)) { onlyA.push([k,a[k]]); }
       else { onlyB.push([k,b[k]]); }
   }
-  return {same,diff,onlyA,onlyB};
+  return {commonKeys, onlyA, onlyB};
 }
-function render({same,diff,onlyA,onlyB}){
-  $('#sameSec').innerHTML = same.length
-    ? `<table><thead><tr><th>Key</th><th>Value (equal)</th></tr></thead><tbody>${same.map(r=>`<tr><td class='path'>${r[0]}</td><td>${cell(r[1])}</td></tr>`).join('')}</tbody></table>`
+function render({commonKeys, onlyA, onlyB}){
+  const matchCount = commonKeys.filter(r => r[3]).length;
+  
+  $('#commonSec').innerHTML = commonKeys.length
+    ? `<table><thead><tr><th style="width:20%">Key</th><th>Client Value</th><th>Your Value</th></tr></thead><tbody>${commonKeys.map(r=>`<tr class="${r[3]?'row-match':''}"><td class='path'>${r[0]}${r[3]?'<span class="match-icon">✓</span>':''}</td><td>${cell(r[1])}</td><td>${cell(r[2])}</td></tr>`).join('')}</tbody></table>`
     : '<em class="status">None</em>';
-  $('#diffSec').innerHTML = diff.length
-    ? `<table><thead><tr><th>Key</th><th>Client Profile</th><th>Your Category Profile (union)</th></tr></thead><tbody>${diff.map(r=>`<tr><td class='path'>${r[0]}</td><td>${cell(r[1])}</td><td>${cell(r[2])}</td></tr>`).join('')}</tbody></table>`
-    : '<em class="status">None</em>';
+  
   $('#onlySec').innerHTML = `<table class='twoCol'><colgroup><col><col></colgroup>
     <thead><tr><th>Only in Client</th><th>Only in Yours</th></tr></thead>
     <tbody><tr>
       <td>${onlyA.map(r=>`<div><b class='path'>${r[0]}</b>${plainCell(r[1])}</div>`).join('') || '<em class="status">None</em>'}</td>
       <td>${onlyB.map(r=>`<div><b class='path'>${r[0]}</b>${plainCell(r[1])}</div>`).join('') || '<em class="status">None</em>'}</td>
     </tr></tbody></table>`;
-  $('#sameCount').textContent = same.length;
-  $('#diffCount').textContent = diff.length;
+  
+  $('#commonCount').textContent = commonKeys.length;
+  $('#matchCount').textContent = `${matchCount} match`;
   $('#onlyCount').textContent = onlyA.length + onlyB.length;
 }
 function doCompare(){
@@ -608,8 +607,8 @@ $('#btnSample').onclick = ()=>{
 $('#btnClear').onclick = ()=>{
   $('#client').value=''; $('#mine').value='';
   clientIdx = 0; ourIdx = 0;
-  ['#sameSec','#diffSec','#onlySec'].forEach(id=>$(id).innerHTML='<em class="status">Cleared.</em>');
-  ['#sameCount','#diffCount','#onlyCount'].forEach(id=>$(id).textContent='0');
+  ['#commonSec','#onlySec'].forEach(id=>$(id).innerHTML='<em class="status">Cleared.</em>');
+  ['#commonCount','#matchCount','#onlyCount'].forEach(id=>$(id).textContent='0');
   $('#clientCounter').textContent = '0/0';
   $('#ourCounter').textContent = '0/0';
 };
