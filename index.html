@@ -58,6 +58,12 @@
   .twoCol col{width:50%}
   .row-match{background:rgba(16,185,129,.08)}
   .match-icon{color:#10b981;font-weight:bold;margin-left:4px}
+  /* Profile chips */
+  .profile-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;min-height:32px}
+  .profile-chip{padding:4px 10px;border-radius:6px;background:#1f2d45;color:#93a6be;font-size:12px;cursor:pointer;border:1px solid #2a3f5f;transition:all .15s ease;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px}
+  .profile-chip:hover{background:#243449;border-color:#3b5273}
+  .profile-chip.active{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:600}
+  .profile-chip.empty{color:#5a6b82;cursor:default;font-style:italic}
   /* Modal */
   .modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:99}
   .dialog{width:min(860px,92vw);background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
@@ -103,6 +109,7 @@
       <div>
         <label>Client JSON</label>
         <textarea id="client" placeholder="Paste client JSON here..."></textarea>
+        <div class="profile-chips" id="clientChips"></div>
         <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
           <button class="btn ghost" id="clientPrev">← Prev</button>
           <span id="clientCounter" class="pill info">0/0</span>
@@ -112,6 +119,7 @@
       <div>
         <label>Your JSON</label>
         <textarea id="mine" placeholder="Paste your JSON here..."></textarea>
+        <div class="profile-chips" id="ourChips"></div>
         <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
           <button class="btn ghost" id="ourPrev">← Prev</button>
           <span id="ourCounter" class="pill info">0/0</span>
@@ -517,6 +525,54 @@ function extractMineAt(d, idx){
   return {};
 }
 
+// Extract all profile names from JSON structure
+function getAllProfileNames(d){
+  if(!d) return [];
+  
+  // For arrays with nested categories
+  if(Array.isArray(d)){
+    const allCats = d.flatMap(x => x && Array.isArray(x.categories) ? x.categories : []);
+    if(allCats.length > 0){
+      return allCats.filter(x => x && x.profile).map(x => x.profile?.name || 'Unnamed');
+    }
+    return d.filter(x => x && x.profile).map(x => x.profile?.name || 'Unnamed');
+  }
+  
+  // For objects with categories array
+  if(Array.isArray(d.categories)){
+    return d.categories.filter(x => x && x.profile).map(x => x.profile?.name || 'Unnamed');
+  }
+  
+  // Single profile
+  if(d.profile) return [d.profile?.name || 'Unnamed'];
+  
+  return [];
+}
+
+// Render profile chips
+function renderChips(containerId, names, activeIdx, onClickCallback){
+  const container = $(containerId);
+  if(!container) return;
+  
+  if(!names || names.length === 0){
+    container.innerHTML = '<span class="profile-chip empty">No profiles</span>';
+    return;
+  }
+  
+  container.innerHTML = names.map((name, idx) => 
+    `<div class="profile-chip ${idx === activeIdx ? 'active' : ''}" data-idx="${idx}" title="${escapeHtml(name)}">${escapeHtml(name)}</div>`
+  ).join('');
+  
+  // Add click handlers
+  container.querySelectorAll('.profile-chip').forEach(chip => {
+    const idx = parseInt(chip.getAttribute('data-idx'));
+    if(!isNaN(idx)){
+      chip.addEventListener('click', () => onClickCallback(idx));
+    }
+  });
+}
+
+
 function mergeProfiles(arr){ let out={}; for (const i of arr||[]){ if (isObj(i.profile)) Object.assign(out, i.profile); } return out; }
 function extractClient(d){ if (Array.isArray(d)) return mergeProfiles(d); if (isObj(d.profile)) return d.profile; return mergeProfiles(d.categories); }
 function extractMine(d){ if (Array.isArray(d)){ const cats = d.flatMap(x=>x && Array.isArray(x.categories) ? x.categories : []); return cats.reduce((a,c)=>Object.assign(a, (c && c.profile) || {}), {}); } return mergeProfiles(d.categories); }
@@ -588,6 +644,20 @@ function doCompare(){
   $('#ourPrev').disabled = ourTotal <= 1 || ourIdx <= 0;
   $('#ourNext').disabled = ourTotal <= 1 || ourIdx >= ourTotal - 1;
   
+  // Render profile chips
+  const clientNames = getAllProfileNames(c);
+  const ourNames = getAllProfileNames(m);
+  
+  renderChips('#clientChips', clientNames, clientIdx, (idx) => {
+    clientIdx = idx;
+    doCompare();
+  });
+  
+  renderChips('#ourChips', ourNames, ourIdx, (idx) => {
+    ourIdx = idx;
+    doCompare();
+  });
+  
   const a = clientTotal > 0 ? extractClientAt(c, clientIdx) : {};
   const b = ourTotal > 0 ? extractMineAt(m, ourIdx) : {};
   render(compare(a,b));
@@ -611,6 +681,8 @@ $('#btnClear').onclick = ()=>{
   ['#commonCount','#matchCount','#onlyCount'].forEach(id=>$(id).textContent='0');
   $('#clientCounter').textContent = '0/0';
   $('#ourCounter').textContent = '0/0';
+  $('#clientChips').innerHTML = '<span class="profile-chip empty">No profiles</span>';
+  $('#ourChips').innerHTML = '<span class="profile-chip empty">No profiles</span>';
 };
 
 // Navigation buttons
