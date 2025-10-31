@@ -45,7 +45,7 @@
   .r-head{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line);position:sticky;top:0;background:#0c1626}
   .container{padding:12px;display:grid;grid-template-columns:1fr 1fr;gap:12px;overflow:auto}
   label{font-size:12px;color:#cbd5e1;margin:6px 0 6px 4px;display:block}
-  textarea{width:100%;min-height:220px;background:#0f172a;color:#e7edf5;border:1px solid #1f2d45;border-radius:12px;padding:12px;font-family:ui-monospace,Consolas,Menlo,monospace}
+  textarea{width:100%;min-height:220px;background:#0f172a;color:#e7edf5;border:1px solid #1f2d45;border-radius:12px;padding:12px;font-family:ui-monospace,Consolas,Menlo,monospace;scroll-behavior:smooth}
   .card{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;margin:12px}
   .card h3{margin:0;padding:10px 12px;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:center}
   table{width:100%;border-collapse:collapse}
@@ -173,14 +173,13 @@
 <script>
 const $ = (s)=>document.querySelector(s);
 const $$ = (s)=>Array.from(document.querySelectorAll(s));
-// FIXED: removed stray brace that broke all JS
 const escapeHtml = (s)=>String(s).replace(/[&<>\"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]));
 const isObj = (v)=> v && typeof v==='object' && !Array.isArray(v);
 
 // ---------- Constants ----------
 const CATEGORY_LABELS = {
   "staff_supplier_category": "Preferred Staff",
-  "hired_entertainment_supplier_category": "Hired Entertainment",
+  "hired_entertainment_supplier_category": "Hired_Entertainment",
   "transportation_supplier_category": "Transportation",
   "logistics_supplier_category": "Logistics",
   "activity_supplier_category": "Activity",
@@ -323,6 +322,9 @@ async function loadAllSheets(){
       const txt = await fetchCsv(sid, gid);
       const rows = await parseCsv(txt);
       const cols = colsFor(label);
+      console.log("entity 1-1 input col name:", cols.one_to_one.input_url);
+      console.log("entity 1-many input col name:", cols.one_to_many.input_url);
+
       rows.forEach((r, idx)=>{
         const rowNum = idx + 2;
 
@@ -437,7 +439,7 @@ function buildTree(){
 
   $('#status').textContent = `${totalRuns} runs`;
 
-  // link clicks
+  // link clicks - NO SCROLL on initial load
   root.querySelectorAll('a[data-cat]').forEach(a=>{
     a.addEventListener('click', (e)=>{
       e.preventDefault();
@@ -448,7 +450,7 @@ function buildTree(){
       $('#mine').value = JSON.stringify(r.our_json || {}, null, 2);
       clientIdx = 0;
       ourIdx = 0;
-      doCompare();
+      doCompare(); // NO scrolling on load - stays at top
     });
   });
 }
@@ -572,6 +574,72 @@ function renderChips(containerId, names, activeIdx, onClickCallback){
   });
 }
 
+// FIXED: Auto-scroll textarea to show active profile with proper focus
+function scrollToProfile(textareaId, jsonData, profileIdx){
+  const textarea = $(textareaId);
+  if(!textarea || !jsonData) return;
+  
+  const names = getAllProfileNames(jsonData);
+  if(profileIdx < 0 || profileIdx >= names.length) return;
+  
+  const targetName = names[profileIdx];
+  const content = textarea.value;
+  
+  // Escape special regex characters in the name
+  const escapedName = targetName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  
+  // Search for the profile name in various JSON formats
+  const patterns = [
+    `"name"\\s*:\\s*"${escapedName}"`,  // "name": "Hotel Name"
+    `"name":"${escapedName}"`,          // "name":"Hotel Name" (compact)
+  ];
+  
+  let position = -1;
+  for(const pattern of patterns){
+    const match = content.match(new RegExp(pattern));
+    if(match){
+      position = match.index;
+      break;
+    }
+  }
+  
+  // Fallback: just search for the name in quotes
+  if(position === -1){
+    position = content.indexOf(`"${targetName}"`);
+  }
+  
+  if(position !== -1){
+    // Calculate line number
+    const beforeText = content.substring(0, position);
+    const lineNumber = beforeText.split('\n').length;
+    
+    // Get computed line height from the textarea
+    const computedStyle = window.getComputedStyle(textarea);
+    const lineHeight = parseFloat(computedStyle.lineHeight) || 20;
+    const visibleLines = Math.floor(textarea.clientHeight / lineHeight);
+    
+    // Scroll to center the profile in view
+    const scrollToLine = Math.max(0, lineNumber - Math.floor(visibleLines / 2));
+    const scrollPosition = scrollToLine * lineHeight;
+    
+    // Use requestAnimationFrame to ensure DOM is updated
+    requestAnimationFrame(() => {
+      textarea.scrollTop = scrollPosition;
+      
+      // Focus and briefly select the name for visual feedback
+      textarea.focus();
+      const nameStart = content.indexOf(`"${targetName}"`, position);
+      if(nameStart !== -1){
+        textarea.setSelectionRange(nameStart + 1, nameStart + 1 + targetName.length);
+        
+        // Clear selection after visual feedback
+        setTimeout(() => {
+          textarea.setSelectionRange(nameStart + 1, nameStart + 1);
+        }, 250);
+      }
+    });
+  }
+}
 
 function mergeProfiles(arr){ let out={}; for (const i of arr||[]){ if (isObj(i.profile)) Object.assign(out, i.profile); } return out; }
 function extractClient(d){ if (Array.isArray(d)) return mergeProfiles(d); if (isObj(d.profile)) return d.profile; return mergeProfiles(d.categories); }
@@ -622,7 +690,9 @@ function render({commonKeys, onlyA, onlyB}){
   $('#matchCount').textContent = `${matchCount} match`;
   $('#onlyCount').textContent = onlyA.length + onlyB.length;
 }
-function doCompare(){
+
+// FIXED: Added parameters to control scrolling behavior
+function doCompare(scrollClient = false, scrollOurs = false){
   let c={}, m={};
   try{ c = JSON.parse($('#client').value||'{}'); }catch(e){ console.error('Client JSON parse error:', e); c={}; }
   try{ m = JSON.parse($('#mine').value||'{}'); }catch(e){ console.error('Our JSON parse error:', e); m={}; }
@@ -648,15 +718,24 @@ function doCompare(){
   const clientNames = getAllProfileNames(c);
   const ourNames = getAllProfileNames(m);
   
+  // FIXED: Each chip now controls only its own side's scrolling
   renderChips('#clientChips', clientNames, clientIdx, (idx) => {
     clientIdx = idx;
-    doCompare();
+    doCompare(true, false); // Scroll CLIENT side only
   });
   
   renderChips('#ourChips', ourNames, ourIdx, (idx) => {
     ourIdx = idx;
-    doCompare();
+    doCompare(false, true); // Scroll OUR side only
   });
+  
+  // FIXED: Only scroll if explicitly requested (prevents scroll on initial load)
+  if(scrollClient && clientTotal > 0){
+    scrollToProfile('#client', c, clientIdx);
+  }
+  if(scrollOurs && ourTotal > 0){
+    scrollToProfile('#mine', m, ourIdx);
+  }
   
   const a = clientTotal > 0 ? extractClientAt(c, clientIdx) : {};
   const b = ourTotal > 0 ? extractMineAt(m, ourIdx) : {};
@@ -669,10 +748,13 @@ $('#closeCfg').onclick = closeModal;
 $('#btnLoad').onclick = loadAllSheets;
 $('#qry').addEventListener('input', buildTree);
 $('#clearQry').onclick = ()=>{ $('#qry').value=''; buildTree(); };
-$('#btnCompare').onclick = doCompare;
+$('#btnCompare').onclick = ()=> doCompare(false, false); // Manual compare, no scroll
 $('#btnSample').onclick = ()=>{
   $('#client').value = `[{"profile":{"name":"Atlantic","starRating":"4","hotelType":["hotel_type_resort","hotel_type_spa"],"hasPool":true,"amenities":["wifi","pool","gym"]}}]`;
   $('#mine').value = `{"categories":[{"profile":{"name":"Atlantic","starRating":4,"hotelType":["hotel_type_spa","hotel_type_resort"],"amenities":["pool","wifi" ]}}]}`;
+  clientIdx = 0;
+  ourIdx = 0;
+  doCompare(false, false); // Load sample, no scroll
 };
 $('#btnClear').onclick = ()=>{
   $('#client').value=''; $('#mine').value='';
@@ -685,11 +767,11 @@ $('#btnClear').onclick = ()=>{
   $('#ourChips').innerHTML = '<span class="profile-chip empty">No profiles</span>';
 };
 
-// Navigation buttons
+// FIXED: Navigation buttons now scroll the appropriate side
 $('#clientPrev').onclick = ()=>{ 
   if(clientIdx > 0){ 
     clientIdx--; 
-    doCompare(); 
+    doCompare(true, false); // Scroll client side
   } 
 };
 
@@ -698,14 +780,14 @@ $('#clientNext').onclick = ()=>{
   try{ c = JSON.parse($('#client').value||'{}'); }catch{ c={}; }
   if(clientIdx < countProfiles(c) - 1){ 
     clientIdx++; 
-    doCompare(); 
+    doCompare(true, false); // Scroll client side
   }
 };
 
 $('#ourPrev').onclick = ()=>{ 
   if(ourIdx > 0){ 
     ourIdx--; 
-    doCompare(); 
+    doCompare(false, true); // Scroll our side
   } 
 };
 
@@ -714,7 +796,7 @@ $('#ourNext').onclick = ()=>{
   try{ m = JSON.parse($('#mine').value||'{}'); }catch{ m={}; }
   if(ourIdx < countProfiles(m) - 1){ 
     ourIdx++; 
-    doCompare(); 
+    doCompare(false, true); // Scroll our side
   }
 };
 
